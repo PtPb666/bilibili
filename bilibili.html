@@ -3,141 +3,194 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>随机B站视频 · 极简播放器</title>
+    <title>实时热门B站视频 · 选择播放器</title>
     <style>
         * { box-sizing: border-box; }
         body {
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: #0f0f0f;
-            color: #e0e0e0;
+            margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: #0f0f0f; color: #e0e0e0;
             font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             padding: 16px;
         }
         .player-wrapper {
-            width: 100%;
-            max-width: 960px;
-            aspect-ratio: 16 / 9;
-            background: #000;
-            border-radius: 10px;
-            overflow: hidden;
+            width: 100%; max-width: 960px; aspect-ratio: 16 / 9;
+            background: #000; border-radius: 10px; overflow: hidden;
             box-shadow: 0 6px 24px rgba(0,0,0,0.7);
         }
-        iframe {
-            width: 100%;
-            height: 100%;
-            border: 0;
-            display: block;
+        iframe { width: 100%; height: 100%; border: 0; display: block; }
+        .controls {
+            margin-top: 20px; width: 100%; max-width: 960px;
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
         }
-        .info {
-            margin-top: 20px;
-            text-align: center;
-            max-width: 960px;
-            width: 100%;
+        select {
+            flex: 1; min-width: 240px; padding: 10px 14px;
+            border-radius: 8px; border: 1px solid #333;
+            background: #1a1a1a; color: #e0e0e0; font-size: 1rem;
+            outline: none; cursor: pointer;
         }
-        .info a {
-            color: #00a1d6;
-            text-decoration: none;
-            font-size: 1.15rem;
-            font-weight: 600;
-            word-break: break-word;
-            line-height: 1.4;
-        }
-        .info a:hover { text-decoration: underline; }
+        select:disabled { opacity: 0.5; cursor: wait; }
         .btn {
-            margin-top: 18px;
-            padding: 10px 28px;
-            background: #00a1d6;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            cursor: pointer;
+            padding: 10px 24px; background: #00a1d6; color: #fff;
+            border: none; border-radius: 8px; font-size: 1rem;
+            cursor: pointer; white-space: nowrap;
             transition: background .2s, transform .1s;
         }
         .btn:hover { background: #0088b3; }
         .btn:active { transform: scale(0.97); }
+        .btn:disabled { background: #2a5a6a; cursor: wait; }
+        .info { margin-top: 16px; text-align: center; max-width: 960px; }
+        .info a {
+            color: #00a1d6; text-decoration: none;
+            font-size: 1.05rem; word-break: break-word;
+        }
+        .info a:hover { text-decoration: underline; }
+        .status { margin-top: 12px; font-size: 0.9rem; color: #888; }
+        .status.error { color: #ff6b6b; }
         .note {
-            margin-top: 14px;
-            font-size: 0.82rem;
-            color: #777;
-            text-align: center;
-            max-width: 600px;
-            line-height: 1.5;
+            margin-top: 18px; font-size: 0.8rem; color: #666;
+            text-align: center; max-width: 640px; line-height: 1.6;
         }
     </style>
 </head>
 <body>
     <div class="player-wrapper">
-        <!-- allow="autoplay" 让静音自动播放生效 -->
         <iframe id="bilibili-player" allow="autoplay; fullscreen" allowfullscreen></iframe>
     </div>
-    <div class="info">
-        <a id="video-link" href="#" target="_blank" rel="noopener">正在加载视频…</a>
+
+    <div class="controls">
+        <select id="video-select" disabled>
+            <option>正在获取热门视频…</option>
+        </select>
+        <button class="btn" id="reload-btn">刷新列表</button>
     </div>
-    <button class="btn" id="next-btn">换一个视频</button>
+
+    <div class="info">
+        <a id="video-link" href="#" target="_blank" rel="noopener">请选择一个视频</a>
+    </div>
+    <div class="status" id="status"></div>
+
     <p class="note">
-        视频默认静音自动播放，取消静音请点击播放器内的音量按钮。<br>
-        刷新页面也会随机换一个视频。
+        列表来自 B 站热门接口，通过公共 CORS 代理获取。<br>
+        如果列表加载失败，可能是代理临时不可用，请稍后点击“刷新列表”重试。
     </p>
 
     <script>
-        /* ========== 视频列表 ==========
-           把 bvid 和 title 换成你想要的视频即可。
-           bvid 就是 B 站视频链接里 BV 开头的那一串，例如：
-           https://www.bilibili.com/video/BV1G3411M7BN 中的 BV1G3411M7BN
-        */
-        const videos = [
-            { bvid: 'BV1G3411M7BN', title: '示例视频一' },
-            { bvid: 'BV1bvMHz7EVJ', title: '示例视频二' },
-            { bvid: 'BV1UX4y1T7dT', title: '示例视频三' },
-            // 可以按同样格式继续添加…
-        ];
+        // ========== 配置 ==========
+        // 公共 CORS 代理（可能不稳定，如失效可替换为其他可用代理或自建 CF Worker）
+        const PROXY = 'https://corsproxy.io/?url=';
+        const POPULAR_API = 'https://api.bilibili.com/x/web-interface/popular?ps=20&pn=1';
 
-        function getRandomVideo() {
-            return videos[Math.floor(Math.random() * videos.length)];
+        // ========== 状态 ==========
+        let videoList = [];
+        let selectedIndex = -1;
+
+        const selectEl = document.getElementById('video-select');
+        const linkEl = document.getElementById('video-link');
+        const statusEl = document.getElementById('status');
+        const reloadBtn = document.getElementById('reload-btn');
+
+        // ========== 工具函数 ==========
+        function setStatus(msg, isError = false) {
+            statusEl.textContent = msg;
+            statusEl.className = 'status' + (isError ? ' error' : '');
         }
 
-        function loadVideo() {
-            if (videos.length === 0) return;
+        function getBvidFromItem(item) {
+            // 优先用 bvid 字段；旧数据可能只有 aid，用 av 号兜底
+            if (item.bvid) return item.bvid;
+            if (item.aid) return 'av' + item.aid;
+            return null;
+        }
 
-            const video = getRandomVideo();
+        // ========== 加载热门列表 ==========
+        async function fetchPopularList() {
+            selectEl.disabled = true;
+            reloadBtn.disabled = true;
+            selectEl.innerHTML = '<option>正在获取热门视频…</option>';
+            setStatus('正在请求热门列表…');
 
-            // 构建 B 站官方外链播放器参数
-            // hideCoverInfo=1  隐藏播放量/弹幕量等信息
-            // danmaku=0       关闭弹幕
-            // hideDanmakuButton=1 隐藏弹幕按钮
-            // noFullScreenButton=1 隐藏全屏按钮（可选）
-            // muted=1 + autoplay=1  静音自动播放，符合浏览器自动播放策略
+            try {
+                const resp = await fetch(PROXY + encodeURIComponent(POPULAR_API));
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+                const json = await resp.json();
+                if (json.code !== 0) throw new Error('API 返回错误，code=' + json.code);
+
+                const list = json.data?.list;
+                if (!Array.isArray(list) || list.length === 0) throw new Error('热门列表为空');
+
+                videoList = list.map(item => ({
+                    bvid: getBvidFromItem(item),
+                    title: item.title || '(无标题)',
+                    owner: item.owner?.name || '',
+                })).filter(v => v.bvid);
+
+                if (videoList.length === 0) throw new Error('没有可用的视频数据');
+
+                // 填充下拉菜单
+                selectEl.innerHTML = '';
+                videoList.forEach((v, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = `${i + 1}. ${v.title}${v.owner ? ' · ' + v.owner : ''}`;
+                    selectEl.appendChild(opt);
+                });
+
+                selectEl.disabled = false;
+                reloadBtn.disabled = false;
+                selectEl.selectedIndex = 0;
+                setStatus(`已加载 ${videoList.length} 个热门视频`);
+
+                // 自动加载第一个
+                loadVideoByIndex(0);
+
+            } catch (err) {
+                console.error(err);
+                setStatus('获取热门列表失败：' + err.message + '（代理可能不可用，请稍后重试）', true);
+                selectEl.innerHTML = '<option>加载失败</option>';
+                selectEl.disabled = false;
+                reloadBtn.disabled = false;
+            }
+        }
+
+        // ========== 加载指定索引的视频 ==========
+        function loadVideoByIndex(index) {
+            const v = videoList[index];
+            if (!v) return;
+            selectedIndex = index;
+
             const params = new URLSearchParams({
-                bvid: video.bvid,
+                bvid: v.bvid,
                 autoplay: 1,
                 muted: 1,
                 danmaku: 0,
                 hideCoverInfo: 1,
                 hideDanmakuButton: 1,
                 noFullScreenButton: 1,
-                high_quality: 1   // 尝试请求高画质（部分视频/环境可能不生效）
             });
 
-            const iframe = document.getElementById('bilibili-player');
-            iframe.src = `https://player.bilibili.com/player.html?${params.toString()}`;
+            document.getElementById('bilibili-player').src =
+                `https://player.bilibili.com/player.html?${params.toString()}`;
 
-            // 用视频标题作为链接文字，点击跳转到 B 站原页面
-            const link = document.getElementById('video-link');
-            link.href = `https://www.bilibili.com/video/${video.bvid}`;
-            link.textContent = video.title;
+            const isAv = v.bvid.startsWith('av');
+            linkEl.href = isAv
+                ? `https://www.bilibili.com/video/${v.bvid}`
+                : `https://www.bilibili.com/video/${v.bvid}`;
+            linkEl.textContent = v.title;
+
+            setStatus(`正在播放：${v.title}`);
         }
 
-        // 页面加载时随机加载一个
-        window.addEventListener('DOMContentLoaded', loadVideo);
+        // ========== 事件 ==========
+        selectEl.addEventListener('change', () => {
+            loadVideoByIndex(Number(selectEl.value));
+        });
 
-        // 按钮：换一个
-        document.getElementById('next-btn').addEventListener('click', loadVideo);
+        reloadBtn.addEventListener('click', fetchPopularList);
+
+        // 页面加载时自动获取
+        window.addEventListener('DOMContentLoaded', fetchPopularList);
     </script>
 </body>
 </html>
